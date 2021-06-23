@@ -18,7 +18,8 @@ pub trait NbResultExt<T, E> {
 
     fn expect_ok(self, msg: &str) -> Option<T>;
 
-    /// Converts the `nb::Result` value into the corresponding `Poll` one.
+    /// Converts the `nb::Result` value into the corresponding `Poll` one. 
+    /// For the `nb::Err::WouldBlock` value it calls a waker.
     fn into_poll(self, ctx: &mut Context<'_>) -> Poll<Result<T, E>>;
 }
 
@@ -60,8 +61,6 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
         }
     }
 
-    /// Converts the `nb::Result` value into the corresponding `Poll` one. 
-    /// For the `nb::Err::WouldBlock` value it calls a waker.
     fn into_poll(self, ctx: &mut Context<'_>) -> Poll<Result<T, E>> {
         match self {
             Ok(output) => Poll::Ready(Ok(output)),
