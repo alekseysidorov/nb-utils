@@ -50,7 +50,7 @@ fn test_maybe_block() {
 fn test_filter() {
     let mut block = MaybeBlock::default();
 
-    let value = nb::block!(block.poll_me().filter(|value| *value == 5)).unwrap();
+    let value = nb::block!(block.poll_me().wait(|value| *value == 5)).unwrap();
     assert_eq!(5, value);
 }
 
@@ -58,7 +58,7 @@ fn test_filter() {
 fn test_filter_map() {
     let mut block = MaybeBlock::default();
 
-    let value = nb::block!(block.poll_me().filter_map(|value| if value == 5 {
+    let value = nb::block!(block.poll_me().wait_map(|value| if value == 5 {
         Some("ready")
     } else {
         None

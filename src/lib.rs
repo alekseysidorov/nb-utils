@@ -1,30 +1,43 @@
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 
 //! A collection of useful `nb` extensions.
 
+#[cfg(feature = "std")]
+pub use crate::std::IntoNbResult;
 use core::{
+    fmt::Debug,
     future::Future,
     task::{Context, Poll},
 };
 use futures_util::Stream;
 
+#[cfg(feature = "std")]
+mod std;
 #[cfg(test)]
 mod tests;
 
+/// Extension trait for [`nb::Result`] type.
 pub trait NbResultExt<T, E> {
-    fn filter<P: FnOnce(&T) -> bool>(self, pred: P) -> Self;
-
-    fn filter_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E>;
-
-    fn expect_ok(self, msg: &str) -> Option<T>;
-
-    /// Converts the `nb::Result` value into the corresponding `Poll` one. 
-    /// For the `nb::Err::WouldBlock` value it calls a waker.
+    /// Returns `Ok` if the given predicate applied to the `Ok` value returns true;
+    /// otherwise returns [`nb::Error::WouldBlock`].
+    fn wait<P: FnOnce(&T) -> bool>(self, pred: P) -> Self;
+    /// Returns `Ok` if the given predicate applied to the `Ok` value returns `Some`;
+    /// otherwise returns [`nb::Error::WouldBlock`].
+    fn wait_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E>;
+    /// Unlike [`core::result::Result::expect`] returns `None`
+    /// if `Err` is [`nb::Error::WouldBlock`].
+    fn expect_ok(self, msg: &str) -> Option<T>
+    where
+        E: Debug;
+    /// Converts the `nb::Result` value into the corresponding `Poll` one.
+    /// For the [`nb::Error::WouldBlock`] value it calls a waker.
     fn into_poll(self, ctx: &mut Context<'_>) -> Poll<Result<T, E>>;
+    /// Returns true if the result is [`nb::Error::WouldBlock`].
+    fn is_would_block(&self) -> bool;
 }
 
 impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
-    fn filter<P: FnOnce(&T) -> bool>(self, pred: P) -> Self {
+    fn wait<P: FnOnce(&T) -> bool>(self, pred: P) -> Self {
         match self {
             Ok(value) => {
                 if pred(&value) {
@@ -37,7 +50,7 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
         }
     }
 
-    fn filter_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E> {
+    fn wait_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E> {
         match self {
             Ok(value) => {
                 if let Some(value) = pred(value) {
@@ -52,12 +65,14 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
     }
 
     #[track_caller]
-    fn expect_ok(self, msg: &str) -> Option<T> {
+    fn expect_ok(self, msg: &str) -> Option<T>
+    where
+        E: Debug,
+    {
         match self {
             Ok(value) => Some(value),
             Err(nb::Error::WouldBlock) => None,
-
-            _ => panic!("{}", msg),
+            Err(nb::Error::Other(error)) => panic!("{msg} {error:?}"),
         }
     }
 
@@ -70,6 +85,10 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
                 Poll::Pending
             }
         }
+    }
+
+    fn is_would_block(&self) -> bool {
+        matches!(self, Err(nb::Error::WouldBlock))
     }
 }
 
