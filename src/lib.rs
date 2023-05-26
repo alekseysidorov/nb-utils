@@ -26,10 +26,23 @@ pub trait NbResultExt<T, E> {
     fn wait_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E>;
     /// Invokes given closure in the result is `Ok` and do nothing if the result
     /// is [`nb::Error::WouldBlock`].
-    fn if_ready<F, U>(self, then: F) -> Result<(), E>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use nb_utils::NbResultExt;
+    ///
+    /// # fn poll_something() -> nb::Result<usize, String> { Ok(42) }
+    ///
+    /// poll_something().if_ready(|value| {
+    ///     println!("Received value {value}");
+    ///     Ok(())
+    /// }).unwrap();
+    ///
+    /// ```
+    fn if_ready<F>(self, then: F) -> Result<(), E>
     where
-        F: FnOnce(T) -> Result<(), U>,
-        E: From<U>;
+        F: FnOnce(T) -> Result<(), E>;
     /// Unlike [`core::result::Result::expect`] returns `None`
     /// if `Err` is [`nb::Error::WouldBlock`].
     fn expect_ok(self, msg: &str) -> Option<T>
@@ -70,10 +83,9 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
         }
     }
 
-    fn if_ready<F, U>(self, then: F) -> Result<(), E>
+    fn if_ready<F>(self, then: F) -> Result<(), E>
     where
-        F: FnOnce(T) -> Result<(), U>,
-        E: From<U>,
+        F: FnOnce(T) -> Result<(), E>,
     {
         match self {
             Err(nb::Error::Other(e)) => Err(e),
