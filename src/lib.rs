@@ -1,6 +1,6 @@
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
-
 //! A collection of useful `nb` extensions.
+
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 
 #[cfg(feature = "std")]
 pub use crate::std::IntoNbResult;
@@ -24,6 +24,12 @@ pub trait NbResultExt<T, E> {
     /// Returns `Ok` if the given predicate applied to the `Ok` value returns `Some`;
     /// otherwise returns [`nb::Error::WouldBlock`].
     fn wait_map<U, P: FnOnce(T) -> Option<U>>(self, pred: P) -> nb::Result<U, E>;
+    /// Invokes given closure in the result is `Ok` and do nothing if the result
+    /// is [`nb::Error::WouldBlock`].
+    fn if_ready<F, U>(self, then: F) -> Result<(), E>
+    where
+        F: FnOnce(T) -> Result<(), U>,
+        E: From<U>;
     /// Unlike [`core::result::Result::expect`] returns `None`
     /// if `Err` is [`nb::Error::WouldBlock`].
     fn expect_ok(self, msg: &str) -> Option<T>
@@ -61,6 +67,18 @@ impl<T, E> NbResultExt<T, E> for nb::Result<T, E> {
             }
             Err(nb::Error::Other(other)) => Err(nb::Error::Other(other)),
             Err(nb::Error::WouldBlock) => Err(nb::Error::WouldBlock),
+        }
+    }
+
+    fn if_ready<F, U>(self, then: F) -> Result<(), E>
+    where
+        F: FnOnce(T) -> Result<(), U>,
+        E: From<U>,
+    {
+        match self {
+            Err(nb::Error::Other(e)) => Err(e),
+            Err(nb::Error::WouldBlock) => Ok(()),
+            Ok(value) => then(value).map_err(E::from),
         }
     }
 

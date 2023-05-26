@@ -3,7 +3,7 @@ use futures_util::StreamExt;
 use crate::{poll_nb_future, poll_nb_stream, yield_executor, NbResultExt};
 
 struct MaybeBlock {
-    attempts: usize,
+    attempts_per_item: usize,
     value: usize,
 
     remaining_attemts: usize,
@@ -12,10 +12,10 @@ struct MaybeBlock {
 impl Default for MaybeBlock {
     fn default() -> Self {
         Self {
-            attempts: 5,
+            attempts_per_item: 5,
             value: 0,
 
-            remaining_attemts: 0,
+            remaining_attemts: 1,
         }
     }
 }
@@ -26,7 +26,7 @@ impl MaybeBlock {
             let value = self.value;
 
             self.value += 1;
-            self.remaining_attemts = self.attempts;
+            self.remaining_attemts = self.attempts_per_item;
             return Ok(value);
         }
 
@@ -58,12 +58,11 @@ fn test_filter() {
 fn test_filter_map() {
     let mut block = MaybeBlock::default();
 
-    let value = nb::block!(block.poll_me().wait_map(|value| if value == 5 {
-        Some("ready")
-    } else {
-        None
-    }))
-    .unwrap();
+    let value =
+        nb::block!(block
+            .poll_me()
+            .wait_map(|value| if value == 5 { Some("ready") } else { None }))
+        .unwrap();
     assert_eq!("ready", value);
 }
 
@@ -99,4 +98,29 @@ fn test_yield() {
     spin_on::spin_on(async {
         yield_executor().await;
     });
+}
+
+#[test]
+fn test_if_ready() {
+    let mut block = MaybeBlock {
+        value: 18,
+        attempts_per_item: 2,
+        remaining_attemts: 2,
+    };
+
+    // First poll attempt should not invoke the closure
+    block
+        .poll_me()
+        .if_ready(|_| {
+            panic!("I am not ready yet");
+        })
+        .unwrap();
+    // But second one should
+    block
+        .poll_me()
+        .if_ready(|value| {
+            assert_eq!(value, 18);
+            Ok(())
+        })
+        .unwrap()
 }
